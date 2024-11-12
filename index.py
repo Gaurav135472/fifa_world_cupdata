@@ -1,122 +1,91 @@
-
-
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import matplotlib.pyplot as plt
 
-# Load the dataset
-fifa_data = pd.read_csv('C:\\fifa_world_cupdata\\Fifa_world_cup3.csv')
+# Load the datasets
+player_data = pd.read_csv('/mnt/data/all_player_info.csv')
+fifa_data = pd.read_csv('/mnt/data/Fifa_world_cup3.csv')
 
-# Define the header navigation options
-st.set_page_config(page_title="FIFA World Cup Dashboard", layout="wide")
+# Set up the Streamlit layout
+st.set_page_config(page_title="FIFA World Cup Player Stats", layout="wide")
 
-# Sidebar filter for Year and Home/Away/Neutral
-st.sidebar.header("Filters")
-fifa_data["Date"] = pd.to_datetime(fifa_data["Date"], errors='coerce')  # Ensuring correct date parsing
-selected_year = st.sidebar.selectbox("Select Year", sorted(fifa_data["Date"].dropna().dt.year.unique()))
+# Sidebar filters
+st.sidebar.title("Filters")
+countries = player_data['Country'].unique()
+selected_country = st.sidebar.selectbox("Select Country", ["All"] + list(countries))
 
-# Define the options for Home/Away/Neutral filter
-location_filter = st.sidebar.selectbox("Select Match Location", ["All", "Home", "Away", "Neutral"])
+positions = player_data['Position'].unique()
+selected_position = st.sidebar.selectbox("Select Position", ["All"] + list(positions))
 
-# Filter data based on selected year
-year_filtered_data = fifa_data[fifa_data["Date"].dt.year == selected_year]
+years = fifa_data['Year'].unique()
+selected_year = st.sidebar.selectbox("Select Year", ["All"] + sorted(list(years)))
 
-# Apply the Home/Away/Neutral filter
-if location_filter == "Home":
-    location_filtered_data = year_filtered_data[year_filtered_data["Home_Away_Neutral"] == "Home"]
-elif location_filter == "Away":
-    location_filtered_data = year_filtered_data[year_filtered_data["Home_Away_Neutral"] == "Away"]
-elif location_filter == "Neutral":
-    location_filtered_data = year_filtered_data[year_filtered_data["Home_Away_Neutral"] == "Neutral"]
-else:
-    location_filtered_data = year_filtered_data  # No additional filtering if "All" is selected
+# Filter data based on selections
+filtered_data = player_data.copy()
+if selected_country != "All":
+    filtered_data = filtered_data[filtered_data['Country'] == selected_country]
+if selected_position != "All":
+    filtered_data = filtered_data[filtered_data['Position'] == selected_position]
+if selected_year != "All":
+    fifa_filtered = fifa_data[fifa_data['Year'] == selected_year]
+    filtered_data = filtered_data[filtered_data['Player'].isin(fifa_filtered['Player'])]
 
-# Home Page - Top Teams, Players, and Most Frequent Teams in Stages
-st.title("🏆 FIFA World Cup Dashboard - Home")
-st.write("Explore top-performing teams, players, and stage-wise statistics based on year and location filters.")
+# Main section
+st.title("FIFA World Cup Player Stats")
 
-# Top Team Performance with interactive bar chart
-st.subheader("Top Team Performances")
-home_scores = location_filtered_data.groupby("Home_Team")["Home_Score"].sum()
-away_scores = location_filtered_data.groupby("Away_Team")["Away_Score"].sum()
-top_teams = (home_scores.add(away_scores, fill_value=0)).nlargest(10)
+# Player Profile Display
+st.subheader("Player Profiles")
+for _, row in filtered_data.iterrows():
+    st.image(row['PhotoURL'], width=100)  # Assuming there is a 'PhotoURL' column in your dataset
+    st.write(f"**Name**: {row['Player']}")
+    st.write(f"**Country**: {row['Country']}")
+    st.write(f"**Position**: {row['Position']}")
+    st.write(f"**Goals**: {row.get('Goals', 'N/A')}")
+    st.write("---")
 
-fig = px.bar(top_teams.reset_index(), x="index", y=0, labels={"index": "Team", "0": "Total Goals"},
-             title="Top 10 Teams by Goals Scored")
-st.plotly_chart(fig, use_container_width=True)
+# Comparison Tool
+st.subheader("Player Comparison Tool")
+player1 = st.selectbox("Select First Player", player_data['Player'].unique())
+player2 = st.selectbox("Select Second Player", player_data['Player'].unique())
 
-# Top Players and Goals with pie chart
-st.subheader("Top Players and Their Goals")
-top_players = location_filtered_data["Player_Name"].value_counts().nlargest(10)
-top_players_df = top_players.reset_index()
-top_players_df.columns = ['Player', 'Goals']  # Rename columns directly after reset_index
+# Retrieve stats for the selected players
+player1_data = player_data[player_data['Player'] == player1].iloc[0]
+player2_data = player_data[player_data['Player'] == player2].iloc[0]
 
-fig = px.pie(top_players_df, names="Player", values="Goals", 
-             title="Top 10 Players by Goals", hole=0.3)
-st.plotly_chart(fig, use_container_width=True)
+# Display comparison in a table
+comparison_df = pd.DataFrame({
+    'Stat': ['Goals', 'Assists', 'Matches Played'],  # Add more stats if available
+    player1: [player1_data['Goals'], player1_data.get('Assists', 'N/A'), player1_data.get('Matches', 'N/A')],
+    player2: [player2_data['Goals'], player2_data.get('Assists', 'N/A'), player2_data.get('Matches', 'N/A')]
+})
+st.table(comparison_df)
 
-# Most Frequent Teams in Final and Quarter-Final Stages with a bar chart
-st.subheader("Teams with Frequent Appearances in Final and Quarter-Final Stages")
-finals_data = location_filtered_data[location_filtered_data["Tournament_Stage"].isin(["Final", "Quarter-Final"])]
-finals_home = finals_data["Home_Team"].value_counts()
-finals_away = finals_data["Away_Team"].value_counts()
-finals_count = finals_home.add(finals_away, fill_value=0)
+# Visualization Section
+st.subheader("Visualize Player Stats")
+selected_players = st.multiselect("Select Players for Radar Chart", player_data['Player'].unique())
 
-# Reset the index and rename columns to match Plotly's requirements
-finals_count_df = finals_count.reset_index()
-finals_count_df.columns = ['Team', 'Appearances']  # Renaming columns to be more descriptive
+# Generate Radar Chart if more than one player is selected
+if len(selected_players) > 1:
+    radar_data = player_data[player_data['Player'].isin(selected_players)]
+    stats = ['Goals', 'Assists', 'Matches']  # Select stats for radar chart
 
-fig = px.bar(finals_count_df, x="Team", y="Appearances", 
-             title="Teams with Most Appearances in Final & Quarter-Final Stages")
-st.plotly_chart(fig, use_container_width=True)
+    # Normalize data for radar
+    radar_data_normalized = radar_data[stats].copy()
+    radar_data_normalized = (radar_data_normalized - radar_data_normalized.min()) / (radar_data_normalized.max() - radar_data_normalized.min())
 
+    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    angles = [n / float(len(stats)) * 2 * 3.1415 for n in range(len(stats))]
+    angles += angles[:1]
 
-# Define the header navigation options
-st.set_page_config(page_title="FIFA World Cup Dashboard", layout="wide")
+    for idx, row in radar_data_normalized.iterrows():
+        values = row.tolist()
+        values += values[:1]
+        ax.plot(angles, values, label=radar_data.loc[idx, 'Player'])
+        ax.fill(angles, values, alpha=0.25)
 
-# Sidebar filter for Year
-st.sidebar.header("Filter by Year")
-fifa_data["Date"] = pd.to_datetime(fifa_data["Date"], errors='coerce')  # Ensuring correct date parsing
-selected_year = st.sidebar.selectbox("Select Year", sorted(fifa_data["Date"].dropna().dt.year.unique()))
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(stats)
+    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1))
+    st.pyplot(fig)
 
-# Filter data based on selected year
-year_filtered_data = fifa_data[fifa_data["Date"].dt.year == selected_year]
-
-# Home Page - Top Teams, Players, and Most Frequent Teams in Stages
-st.title("🏆 FIFA World Cup Dashboard - Home")
-st.write("Explore top-performing teams, players, and stage-wise statistics.")
-
-# Top Team Performance with interactive bar chart
-st.subheader("Top Team Performances")
-home_scores = year_filtered_data.groupby("Home_Team")["Home_Score"].sum()
-away_scores = year_filtered_data.groupby("Away_Team")["Away_Score"].sum()
-top_teams = (home_scores.add(away_scores, fill_value=0)).nlargest(10)
-
-fig = px.bar(top_teams.reset_index(), x="index", y=0, labels={"index": "Team", "0": "Total Goals"},
-             title="Top 10 Teams by Goals Scored")
-st.plotly_chart(fig, use_container_width=True)
-
-# Top Players and Goals with pie chart
-st.subheader("Top Players and Their Goals")
-top_players = year_filtered_data["Player_Name"].value_counts().nlargest(10)
-top_players_df = top_players.reset_index()
-top_players_df.columns = ['Player', 'Goals']  # Rename columns directly after reset_index
-
-fig = px.pie(top_players_df, names="Player", values="Goals", 
-             title="Top 10 Players by Goals", hole=0.3)
-st.plotly_chart(fig, use_container_width=True)
-
-# Most Frequent Teams in Final and Quarter-Final Stages with a bar chart
-st.subheader("Teams with Frequent Appearances in Final and Quarter-Final Stages")
-finals_data = year_filtered_data[year_filtered_data["Tournament_Stage"].isin(["Final", "Quarter-Final"])]
-finals_home = finals_data["Home_Team"].value_counts()
-finals_away = finals_data["Away_Team"].value_counts()
-finals_count = finals_home.add(finals_away, fill_value=0)
-
-# Reset the index and rename columns to match Plotly's requirements
-finals_count_df = finals_count.reset_index()
-finals_count_df.columns = ['Team', 'Appearances']  # Renaming columns to be more descriptive
-
-fig = px.bar(finals_count_df, x="Team", y="Appearances", 
-             title="Teams with Most Appearances in Final & Quarter-Final Stages")
-st.plotly_chart(fig, use_container_width=True)
+st.write("Explore more filters and options on the sidebar to analyze FIFA World Cup player data.")
